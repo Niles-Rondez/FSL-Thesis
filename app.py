@@ -190,12 +190,19 @@ def predict_webcam():
                 probs = torch.nn.functional.softmax(out, dim=1)[0]
                 pred = out.argmax(dim=1).item()
                 confidence = probs[pred].item()
-            
+
+                top_probs, top_indices = torch.topk(probs, min(3, len(classes)))
+                top_predictions = [
+                    {"class": classes[idx], "confidence": prob.item()}
+                    for prob, idx in zip(top_probs, top_indices)
+                ]
+                            
             hands.close()
             
             return jsonify({
                 "prediction": classes[pred],
                 "confidence": confidence,
+                "top_predictions": top_predictions,
                 "model": model_choice,
                 "bbox": bbox,
                 "hand_detected": True
