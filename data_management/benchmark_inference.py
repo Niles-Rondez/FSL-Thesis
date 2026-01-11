@@ -5,8 +5,8 @@ from PIL import Image
 from device_helper import get_device
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--model_ckpt", default="models/final/resnet50_final.pth")
-parser.add_argument("--image_dir", default="data/H1/A")
+parser.add_argument("--model_ckpt", required=True)
+parser.add_argument("--image_dir", default="data/splits/test")
 parser.add_argument("--n_runs", type=int, default=200)
 args = parser.parse_args()
 
