@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Filipino Sign Language Recognition</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Google Sans', 'Roboto', Arial, sans-serif;
+            background: #202124;
+            min-height: 100vh;
+            color: #e8eaed;
+            overflow: hidden;
+        }
+        
+        .container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            padding: 20px 24px;
+            z-index: 100;
+        }
+        
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .logo-icon {
+            font-size: 32px;
+        }
+        
+        h1 {
+            font-size: 22px;
+            font-weight: 500;
+            color: #e8eaed;
+            margin: 0;
+        }
+        
+        .view-selector {
+            position: absolute;
+            top: 20px;
+            right: 24px;
+            z-index: 100;
+        }
+        
+        .view-toggle {
+            display: flex;
+            background: #3c4043;
+            border-radius: 20px;
+            padding: 4px;
+            gap: 4px;
+        }
+        
+        .view-toggle button {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 16px;
+            background: transparent;
+            color: #9aa0a6;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        
+        .view-toggle button.active {
+            background: #8ab4f8;
+            color: #202124;
+        }
+        
+        .view-toggle button:hover:not(.active) {
+            background: #5f6368;
+            color: #e8eaed;
+        }
+        
+        .main-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 80px 20px 100px;
+        }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 1280px;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        #webcam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        #overlayCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .live-prediction {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 16px 20px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            min-width: 200px;
+        }
+        
+        .live-prediction h3 {
+            font-size: 32px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        
+        .live-confidence {
+            font-size: 16px;
+            opacity: 0.9;
+            margin-bottom: 12px;
+        }
+        
+        .top-predictions-live {
+            border-top: 1px solid rgba(255, 255, 255, 0.3);
+            padding-top: 12px;
+            margin-top: 8px;
+        }
+        
+        .top-predictions-live h4 {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            opacity: 0.8;
+        }
+        
+        .top-pred-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 14px;
+        }
+        
+        .top-pred-item .label {
+            opacity: 0.9;
+        }
+        
+        .top-pred-item .conf {
+            opacity: 0.7;
+        }
+        
+        .controls-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+        }
+        
+        .control-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: none;
+            background: #3c4043;
+            color: #e8eaed;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .control-btn:hover {
+            background: #5f6368;
+        }
+        
+        .control-btn.active {
+            background: #8ab4f8;
+            color: #202124;
+        }
+        
+        .control-btn.camera-btn {
+            width: 64px;
+            height: 64px;
+            background: #ea4335;
+        }
+        
+        .control-btn.camera-btn:hover {
+            background: #d33828;
+        }
+        
+        .control-btn.camera-btn.active {
+            background: #3c4043;
+        }
+        
+        .control-btn.camera-btn.active:hover {
+            background: #5f6368;
+        }
+        
+        .model-toggle-bottom {
+            display: flex;
+            background: #3c4043;
+            border-radius: 20px;
+            padding: 4px;
+            gap: 4px;
+        }
+        
+        .model-toggle-bottom button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 16px;
+            background: transparent;
+            color: #9aa0a6;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        
+        .model-toggle-bottom button.active {
+            background: #8ab4f8;
+            color: #202124;
+        }
+        
+        .model-toggle-bottom button:hover:not(.active) {
+            background: #5f6368;
+            color: #e8eaed;
+        }
+        
+        .status {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            background: rgba(60, 64, 67, 0.95);
+            backdrop-filter: blur(10px);
+            color: #e8eaed;
+        }
+        
+        .status.success {
+            background: rgba(46, 125, 50, 0.95);
+        }
+        
+        .status.error {
+            background: rgba(234, 67, 53, 0.95);
+        }
+        
+        .status.warning {
+            background: rgba(251, 188, 5, 0.95);
+            color: #202124;
+        }
+        
+        .tab-content {
+            display: none;
+            flex: 1;
+        }
+        
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Upload Tab Styles */
+        .upload-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 80px 20px 100px;
+        }
+        
+        .upload-content {
+            width: 100%;
+            max-width: 800px;
+        }
+        
+        .upload-area {
+            border: 3px dashed #5f6368;
+            border-radius: 12px;
+            padding: 60px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #3c4043;
+            margin-bottom: 30px;
+        }
+        
+        .upload-area:hover {
+            background: #5f6368;
+            border-color: #8ab4f8;
+        }
+        
+        .upload-area.dragging {
+            background: #5f6368;
+            border-color: #8ab4f8;
+        }
+        
+        .upload-icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+        }
+        
+        .upload-area h2 {
+            color: #e8eaed;
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+        
+        .upload-area p {
+            color: #9aa0a6;
+            font-size: 14px;
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .preview-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        #imagePreview {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        
+        .predict-btn {
+            padding: 12px 32px;
+            background: #8ab4f8;
+            color: #202124;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .predict-btn:hover {
+            background: #aecbfa;
+        }
+        
+        .predict-btn:disabled {
+            background: #5f6368;
+            cursor: not-allowed;
+        }
+        
+        .result-panel {
+            margin-top: 30px;
+            padding: 24px;
+            background: #3c4043;
+            border-radius: 12px;
+            display: none;
+        }
+        
+        .result-panel.show {
+            display: block;
+            animation: slideIn 0.3s;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .result-panel h2 {
+            font-size: 18px;
+            font-weight: 500;
+            margin-bottom: 16px;
+            color: #e8eaed;
+        }
+        
+        .prediction-main {
+            font-size: 48px;
+            font-weight: 500;
+            margin: 16px 0;
+            color: #8ab4f8;
+        }
+        
+        .confidence-text {
+            font-size: 20px;
+            color: #9aa0a6;
+            margin-bottom: 20px;
+        }
+        
+        .top-predictions-section {
+            border-top: 1px solid #5f6368;
+            padding-top: 16px;
+        }
+        
+        .top-predictions-section h3 {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 12px;
+            color: #9aa0a6;
+        }
+        
+        .top-pred-item-upload {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 16px;
+            margin: 6px 0;
+            background: #5f6368;
+            border-radius: 8px;
+            color: #e8eaed;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner {
+            border: 4px solid #5f6368;
+            border-top: 4px solid #8ab4f8;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <div class="logo-icon">🤟</div>
+                <h1>FSL Recognition</h1>
+            </div>
+        </header>
+        
+        <div class="view-selector">
+            <div class="view-toggle">
+                <button class="view-btn active" data-view="webcam">📹 Webcam</button>
+                <button class="view-btn" data-view="upload">📁 Upload</button>
+            </div>
+        </div>
+        
+        <!-- Webcam Tab -->
+        <div id="webcam-tab" class="tab-content active">
+            <div class="main-content">
+                <div class="video-container">
+                    <video id="webcam" autoplay playsinline></video>
+                    <canvas id="overlayCanvas"></canvas>
+                    <div class="live-prediction" id="livePrediction" style="display: none;">
+                        <h3 id="liveSign">-</h3>
+                        <div class="live-confidence" id="liveConf">-</div>
+                        <div class="top-predictions-live" id="topPredictionsLive" style="display: none;">
+                            <h4>Top 3 Predictions:</h4>
+                            <div id="topPredsList"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="status" id="webcamStatus">
+                Click the camera button to start
+            </div>
+            
+            <div class="controls-bar">
+                <div class="model-toggle-bottom">
+                    <button class="model-btn-webcam active" data-model="resnet50">ResNet50</button>
+                    <button class="model-btn-webcam" data-model="resnet101">ResNet101</button>
+                </div>
+                
+                <button class="control-btn camera-btn" id="cameraBtn" title="Start Camera">📹</button>
+                
+                <button class="control-btn" id="predictionToggleBtn" title="Toggle Top Predictions">📊</button>
+            </div>
+            
+            <canvas id="canvas" style="display: none;"></canvas>
+        </div>
+        
+        <!-- Upload Tab -->
+        <div id="upload-tab" class="tab-content">
+            <div class="upload-container">
+                <div class="upload-content">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📤</div>
+                        <h2>Drop your image here or click to browse</h2>
+                        <p>Supports PNG, JPG, JPEG</p>
+                        <input type="file" id="fileInput" accept="image/png,image/jpeg,image/jpg">
+                    </div>
+                    
+                    <div class="preview-container">
+                        <img id="imagePreview" style="display: none;">
+                    </div>
+                    
+                    <div style="text-align: center;">
+                        <button class="predict-btn" id="predictBtn" style="display: none;">🔍 Predict Sign</button>
+                    </div>
+                    
+                    <div class="loading" id="uploadLoading">
+                        <div class="spinner"></div>
+                        <p style="color: #9aa0a6;">Analyzing your image...</p>
+                    </div>
+                    
+                    <div class="result-panel" id="uploadResult">
+                        <h2>Prediction Result</h2>
+                        <div class="prediction-main" id="predictionText">-</div>
+                        <div class="confidence-text" id="confidenceText">Confidence: -</div>
+                        <div class="top-predictions-section">
+                            <h3>Top 3 Predictions:</h3>
+                            <div id="topPredictions"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="controls-bar">
+                <div class="model-toggle-bottom">
+                    <button class="model-btn-upload active" data-model="resnet50">ResNet50</button>
+                    <button class="model-btn-upload" data-model="resnet101">ResNet101</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let webcamStream = null;
+        let predictionInterval = null;
+        let overlayCtx = null;
+        let cameraActive = false;
+        let currentModelWebcam = 'resnet50';
+        let currentModelUpload = 'resnet50';
+        let showTopPredictions = false;
+        
+        // View toggle functionality
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const view = btn.dataset.view;
+                document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+                document.getElementById(view + '-tab').classList.add('active');
+                
+                // Stop camera when switching away from webcam
+                if (view !== 'webcam' && cameraActive) {
+                    stopCamera();
+                }
+            });
+        });
+        
+        // Model toggle for webcam
+        document.querySelectorAll('.model-btn-webcam').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.model-btn-webcam').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentModelWebcam = btn.dataset.model;
+            });
+        });
+        
+        // Model toggle for upload
+        document.querySelectorAll('.model-btn-upload').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.model-btn-upload').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentModelUpload = btn.dataset.model;
+            });
+        });
+        
+        // Top predictions toggle
+        const predictionToggleBtn = document.getElementById('predictionToggleBtn');
+        predictionToggleBtn.addEventListener('click', () => {
+            showTopPredictions = !showTopPredictions;
+            predictionToggleBtn.classList.toggle('active');
+            document.getElementById('topPredictionsLive').style.display = 
+                showTopPredictions ? 'block' : 'none';
+        });
+        
+        const webcam = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        overlayCtx = overlayCanvas.getContext('2d');
+        const cameraBtn = document.getElementById('cameraBtn');
+        
+        // Setup overlay canvas to match video
+        webcam.addEventListener('loadedmetadata', () => {
+            overlayCanvas.width = webcam.videoWidth;
+            overlayCanvas.height = webcam.videoHeight;
+        });
+        
+        cameraBtn.addEventListener('click', () => {
+            if (cameraActive) {
+                stopCamera();
+            } else {
+                startCamera();
+            }
+        });
+        
+        async function startCamera() {
+            try {
+                webcamStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                webcam.srcObject = webcamStream;
+                
+                cameraActive = true;
+                cameraBtn.classList.add('active');
+                cameraBtn.innerHTML = '📹';
+                document.getElementById('livePrediction').style.display = 'block';
+                document.getElementById('webcamStatus').textContent = 'Camera active - Show your hand sign!';
+                document.getElementById('webcamStatus').className = 'status success';
+                
+                // Start predictions at 3 FPS
+                predictionInterval = setInterval(predictFromWebcam, 333);
+            } catch (error) {
+                document.getElementById('webcamStatus').textContent = 'Error: ' + error.message;
+                document.getElementById('webcamStatus').className = 'status error';
+            }
+        }
+        
+        function stopCamera() {
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                webcamStream = null;
+            }
+            if (predictionInterval) {
+                clearInterval(predictionInterval);
+                predictionInterval = null;
+            }
+            
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            
+            cameraActive = false;
+            cameraBtn.classList.remove('active');
+            cameraBtn.innerHTML = '📹';
+            document.getElementById('livePrediction').style.display = 'none';
+            document.getElementById('webcamStatus').textContent = 'Camera stopped';
+            document.getElementById('webcamStatus').className = 'status';
+        }
+        
+        async function predictFromWebcam() {
+            if (!webcam.videoWidth || !webcam.videoHeight) return;
+            
+            canvas.width = webcam.videoWidth;
+            canvas.height = webcam.videoHeight;
+            ctx.drawImage(webcam, 0, 0);
+            
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            const formData = new FormData();
+            formData.append('image', imageData);
+            formData.append('model_choice', currentModelWebcam);
+            
+            try {
+                const response = await fetch('/predict_webcam', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                
+                if (response.ok && data.hand_detected) {
+                    const bbox = data.bbox;
+                    const color = data.confidence > 0.8 ? '#34a853' : '#fbbc04';
+                    
+                    const scaleX = overlayCanvas.width / canvas.width;
+                    const scaleY = overlayCanvas.height / canvas.height;
+                    
+                    const x = bbox.xmin * scaleX;
+                    const y = bbox.ymin * scaleY;
+                    const w = (bbox.xmax - bbox.xmin) * scaleX;
+                    const h = (bbox.ymax - bbox.ymin) * scaleY;
+                    
+                    overlayCtx.strokeStyle = color;
+                    overlayCtx.lineWidth = 3;
+                    overlayCtx.strokeRect(x, y, w, h);
+                    
+                    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    overlayCtx.fillRect(x, y - 36, w, 32);
+                    
+                    overlayCtx.fillStyle = color;
+                    overlayCtx.font = 'bold 20px Google Sans, Arial';
+                    overlayCtx.textAlign = 'center';
+                    overlayCtx.fillText(data.prediction, x + w/2, y - 12);
+                    
+                    document.getElementById('liveSign').textContent = data.prediction;
+                    document.getElementById('liveConf').textContent = 
+                        `${(data.confidence * 100).toFixed(1)}%`;
+                    
+                    // Update top predictions if toggle is on
+                    if (showTopPredictions) {
+                        const topPredsList = document.getElementById('topPredsList');
+                        // Check if top_predictions exists in response, otherwise create from prediction
+                        if (data.top_predictions && data.top_predictions.length > 0) {
+                            topPredsList.innerHTML = data.top_predictions.slice(0, 3).map(pred => 
+                                `<div class="top-pred-item">
+                                    <span class="label">${pred.class}</span>
+                                    <span class="conf">${(pred.confidence * 100).toFixed(1)}%</span>
+                                </div>`
+                            ).join('');
+                        } else {
+                            // Fallback: show just the main prediction if top_predictions not available
+                            topPredsList.innerHTML = `
+                                <div class="top-pred-item">
+                                    <span class="label">${data.prediction}</span>
+                                    <span class="conf">${(data.confidence * 100).toFixed(1)}%</span>
+                                </div>
+                            `;
+                        }
+                    }
+                    
+                    document.getElementById('webcamStatus').textContent = 
+                        `Detected: ${data.prediction} (${(data.confidence * 100).toFixed(1)}%)`;
+                    document.getElementById('webcamStatus').className = 'status success';
+                    
+                } else if (!data.hand_detected) {
+                    document.getElementById('liveSign').textContent = 'No hand';
+                    document.getElementById('liveConf').textContent = 'detected';
+                    document.getElementById('webcamStatus').textContent = 
+                        'No hand detected - Please show your hand to the camera';
+                    document.getElementById('webcamStatus').className = 'status warning';
+                }
+            } catch (error) {
+                console.error('Prediction error:', error);
+            }
+        }
+        
+        // Upload functionality
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const predictBtn = document.getElementById('predictBtn');
+        
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragging');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragging');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragging');
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileSelect();
+            }
+        });
+        
+        fileInput.addEventListener('change', handleFileSelect);
+        
+        function handleFileSelect() {
+            const file = fileInput.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    predictBtn.style.display = 'inline-block';
+                    document.getElementById('uploadResult').classList.remove('show');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+        
+        predictBtn.addEventListener('click', async () => {
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('model_choice', currentModelUpload);
+            
+            document.getElementById('uploadLoading').classList.add('show');
+            document.getElementById('uploadResult').classList.remove('show');
+            
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('predictionText').textContent = data.prediction;
+                    document.getElementById('confidenceText').textContent = 
+                        `Confidence: ${(data.confidence * 100).toFixed(2)}%`;
+                    
+                    const topPredDiv = document.getElementById('topPredictions');
+                    topPredDiv.innerHTML = data.top_predictions.map(pred => 
+                        `<div class="top-pred-item-upload">
+                            <span>${pred.class}</span>
+                            <span>${(pred.confidence * 100).toFixed(2)}%</span>
+                        </div>`
+                    ).join('');
+                    
+                    document.getElementById('uploadResult').classList.add('show');
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                document.getElementById('uploadLoading').classList.remove('show');
+            }
+        });
+    </script>
+</body>
+</html>
