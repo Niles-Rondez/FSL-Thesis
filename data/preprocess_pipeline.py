@@ -1,105 +1,50 @@
 # preprocess_pipeline.py
 import os
 import cv2
-import pandas as pd
 import csv
-import glob
 
-# Files / folders
-annotations_file = "cropped_annotations.csv"        # created by extract_crop_hands.py
-crops_folder = "crops"                           # root folder where crops are stored
-output_folder = "processed"                      # where processed images will be saved
-preprocessed_csv = "preprocessed_annotations.csv"
+CROP_ROOT = "crops"
+OUT_ROOT = "processed"
+ANNOTATIONS = "preprocessed_annotations.csv"
 
-os.makedirs(output_folder, exist_ok=True)
+os.makedirs(OUT_ROOT, exist_ok=True)
 
-# Check the annotations CSV exists
-if not os.path.exists(annotations_file):
-    print(f"ERROR: '{annotations_file}' not found in current folder ({os.getcwd()}).")
-    print("Make sure you run extract_crop_hands.py first and that cropped_annotations.csv is in this folder.")
-    raise SystemExit(1)
-
-# Load annotations
-annotations = pd.read_csv(annotations_file)
-
-# Prepare (overwrite) the preprocessed CSV with header
-with open(preprocessed_csv, mode="w", newline="") as f:
+# Create CSV header
+with open(ANNOTATIONS, "w", newline="") as f:
     writer = csv.writer(f)
-    writer.writerow(["video_name", "frame_index", "hand_index", "preprocessed_filename", "label"])
+    writer.writerow(["subject", "label", "filename"])
 
-processed_count = 0
-skipped_count = 0
+# Loop through subjects and gesture labels
+for subject in os.listdir(CROP_ROOT):
+    for label in os.listdir(os.path.join(CROP_ROOT, subject)):
+        input_dir = os.path.join(CROP_ROOT, subject, label)
+        output_dir = os.path.join(OUT_ROOT, subject, label)
+        os.makedirs(output_dir, exist_ok=True)
 
-# --- Group annotations by video_name ---
-groups = annotations.groupby("video_name")
+        for img_file in os.listdir(input_dir):
+            img_path = os.path.join(input_dir, img_file)
+            img = cv2.imread(img_path)
 
-for video_name, group in groups:
-    saved_count = 0
+            if img is None:
+                continue
 
-    # Output folder for this video
-    video_out = os.path.join(output_folder, video_name if video_name else "unknown")
-    os.makedirs(video_out, exist_ok=True)
+            # Resize image to match ResNet input
+            img = cv2.resize(img, (224, 224))
 
-    for idx, row in group.iterrows():
-        frame_index = int(row.get("frame_index", 0))
-        hand_index = int(row.get("hand_index", 0))
-        label = str(row.get("label", "")).strip()
-        crop_filename = str(row.get("crop_filename", "")).strip()
+            # Apply Gaussian blur for noise reduction
+            img = cv2.GaussianBlur(img, (5, 5), 0)
 
-        # Try to find the crop path
-        possible_paths = []
-        if os.path.isabs(crop_filename) and os.path.exists(crop_filename):
-            crop_path = crop_filename
-        else:
-            if video_name:
-                possible_paths.append(os.path.join(crops_folder, video_name, crop_filename))
-            possible_paths.append(os.path.join(crops_folder, crop_filename))
-            possible_paths.append(crop_filename)
-            matches = glob.glob(os.path.join(crops_folder, "**", os.path.basename(crop_filename)), recursive=True)
-            possible_paths.extend(matches)
+            # Normalize pixel values to [0, 1] then convert back to uint8
+            img = (img.astype("float32") / 255.0 * 255).astype("uint8")
 
-            crop_path = None
-            for p in possible_paths:
-                if os.path.exists(p):
-                    crop_path = p
-                    break
+            # Save processed image
+            cv2.imwrite(os.path.join(output_dir, img_file), img)
 
-        if not crop_path or not os.path.exists(crop_path):
-            print(f"WARNING: crop file not found for row {idx}: tried {len(possible_paths)} locations.")
-            skipped_count += 1
-            continue
+            # Save metadata
+            with open(ANNOTATIONS, "a", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([subject, label, img_file])
 
-        img = cv2.imread(crop_path)
-        if img is None:
-            print(f"WARNING: OpenCV failed to read image at '{crop_path}' (row {idx}). Skipping.")
-            skipped_count += 1
-            continue
+        print(f"✅ Preprocessed {subject} {label}")
 
-        # --- Preprocessing pipeline ---
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        roi = blurred
-        resized = cv2.resize(roi, (224, 224), interpolation=cv2.INTER_AREA)
-        normalized = (resized.astype("float32") / 255.0)
-
-        # Save processed image
-        out_filename = os.path.join(video_out, os.path.basename(crop_path))
-        cv2.imwrite(out_filename, (normalized * 255).astype("uint8"))
-
-        # Append metadata
-        with open(preprocessed_csv, mode="a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([video_name, frame_index, hand_index, out_filename, label])
-
-        processed_count += 1
-        saved_count += 1
-
-    # ✅ Print summary right after finishing this folder
-    print(f"✅ Finished {video_name if video_name else 'unknown'}: {saved_count} images saved to {video_out}")
-
-# ✅ Final summary
-print("\n🎉 Preprocessing finished.")
-print(f"Processed: {processed_count} images")
-print(f"Skipped (missing / unreadable): {skipped_count}")
-print(f"Preprocessed images saved under: '{output_folder}/'")
-print(f"Preprocessed metadata written to: '{preprocessed_csv}'")
+print("🎉 Preprocessing completed successfully")

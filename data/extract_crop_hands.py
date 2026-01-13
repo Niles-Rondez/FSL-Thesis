@@ -1,168 +1,122 @@
+# extract_crop_hands.py
 import os
 import cv2
-import csv
 import math
+import csv
 import mediapipe as mp
 
-# Input / Output folders
-video_folder = "videos"
-output_folder = "crops"
-os.makedirs(output_folder, exist_ok=True)
+RAW_ROOT = "raw"
+CROP_ROOT = "crops"
+ANNOTATIONS = "cropped_annotations.csv"
 
-# CSV for crop metadata (matches your filename in the posted script)
-crop_csv = "cropped_annotations.csv"
-with open(crop_csv, mode="w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(["video_name", "frame_index", "hand_index", "crop_filename", "label"])
+os.makedirs(CROP_ROOT, exist_ok=True)
 
-# Mediapipe setup
+# Initialize MediaPipe Hands model
 mp_hands = mp.solutions.hands
 
-# Helper: rotate image by angle_degs around center (keeps same size)
-def rotate_image(img, angle_degs):
-    h, w = img.shape[:2]
-    center = (w / 2.0, h / 2.0)
-    M = cv2.getRotationMatrix2D(center, angle_degs, 1.0)
-    rotated = cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
-    return rotated
+# Create CSV header
+with open(ANNOTATIONS, "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(["subject", "label", "frame_index", "filename"])
 
-# Process each video
-for video_file in sorted(os.listdir(video_folder)):
-    if not video_file.lower().endswith(".mp4"):
-        continue
 
-    video_path = os.path.join(video_folder, video_file)
-    video_name = os.path.splitext(video_file)[0]
+def rotate_image(image, angle):
+    """
+    Rotates the image by a given angle.
+    This helps standardize hand orientation (important for CNN learning).
+    """
+    h, w = image.shape[:2]
+    M = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1)
+    return cv2.warpAffine(image, M, (w, h), borderMode=cv2.BORDER_REFLECT)
 
-    # Derive label from video name (everything after first underscore if present)
-    label = video_name.split("_", 1)[-1] if "_" in video_name else video_name
 
-    # Create subfolder for this video’s crops
-    video_output_folder = os.path.join(output_folder, video_name)
-    os.makedirs(video_output_folder, exist_ok=True)
+# Use MediaPipe in video tracking mode
+with mp_hands.Hands(
+    static_image_mode=False,      # Video mode (better tracking)
+    max_num_hands=1,              # Only one hand per frame
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+) as hands:
 
-    cap = cv2.VideoCapture(video_path)
-    frame_count = 0
-    saved_count = 0
+    # Loop through subjects (H01–H10)
+    for subject in sorted(os.listdir(RAW_ROOT)):
+        subject_path = os.path.join(RAW_ROOT, subject)
+        if not os.path.isdir(subject_path):
+            continue
 
-    # Use tracking confidence to improve multi-hand detection across frames
-    with mp_hands.Hands(
-        static_image_mode=False,
-        max_num_hands=2,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
-    ) as hands:
-
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            frame_count += 1
-            h_frame, w_frame, _ = frame.shape
-
-            # Convert frame to RGB for MediaPipe
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = hands.process(rgb)
-
-            if not results.multi_hand_landmarks:
-                # no hands found in this frame
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+        # Loop through each video of the subject
+        for video_file in os.listdir(subject_path):
+            if not video_file.lower().endswith((".mp4", ".mov")):
                 continue
 
-            # results.multi_hand_landmarks and results.multi_handedness correspond index-wise
-            handedness_list = results.multi_handedness if results.multi_handedness else [None] * len(results.multi_hand_landmarks)
+            # Extract label from filename (e.g., H01_0-9.mp4 → 0-9)
+            label = video_file.split("_", 1)[1].split(".")[0]
 
-            # iterate through each detected hand (this will capture both hands)
-            for hand_index, (hand_landmarks, hand_handedness) in enumerate(zip(results.multi_hand_landmarks, handedness_list)):
-                # compute landmark pixel coordinates
-                x_coords = [lm.x * w_frame for lm in hand_landmarks.landmark]
-                y_coords = [lm.y * h_frame for lm in hand_landmarks.landmark]
+            # Create output directory: data/crops/H01/0-9/
+            output_dir = os.path.join(CROP_ROOT, subject, label)
+            os.makedirs(output_dir, exist_ok=True)
 
-                # bounding box from landmarks
-                x_min = int(min(x_coords))
-                x_max = int(max(x_coords))
-                y_min = int(min(y_coords))
-                y_max = int(max(y_coords))
+            cap = cv2.VideoCapture(os.path.join(subject_path, video_file))
+            frame_index = 0
+            saved_count = 0
 
-                # Add generous margin so crop > 224x224 and to avoid cutting fingers
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                frame_index += 1
+
+                # Convert BGR (OpenCV) to RGB (MediaPipe requirement)
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = hands.process(rgb)
+
+                # Skip frames with no detected hands
+                if not results.multi_hand_landmarks:
+                    continue
+
+                h, w, _ = frame.shape
+                landmarks = results.multi_hand_landmarks[0]
+
+                # Get bounding box from landmarks
+                x_coords = [lm.x * w for lm in landmarks.landmark]
+                y_coords = [lm.y * h for lm in landmarks.landmark]
+
+                x1, x2 = int(min(x_coords)), int(max(x_coords))
+                y1, y2 = int(min(y_coords)), int(max(y_coords))
+
+                # Add margin so fingers are not clipped
                 margin = 40
-                x_min = max(x_min - margin, 0)
-                y_min = max(y_min - margin, 0)
-                x_max = min(x_max + margin, w_frame)
-                y_max = min(y_max + margin, h_frame)
+                x1 = max(x1 - margin, 0)
+                y1 = max(y1 - margin, 0)
+                x2 = min(x2 + margin, w)
+                y2 = min(y2 + margin, h)
 
-                # Make the crop square (centered)
-                box_w = x_max - x_min
-                box_h = y_max - y_min
-                box_size = max(box_w, box_h)
-                # ensure some minimum minimum (e.g., 250) if you want always >224
-                MIN_BOX = 250
-                if box_size < MIN_BOX:
-                    box_size = MIN_BOX
-
-                # center of original bbox
-                cx = x_min + box_w // 2
-                cy = y_min + box_h // 2
-
-                # compute new square coordinates around center
-                x1 = int(max(cx - box_size // 2, 0))
-                y1 = int(max(cy - box_size // 2, 0))
-                x2 = int(min(x1 + box_size, w_frame))
-                y2 = int(min(y1 + box_size, h_frame))
-
-                # adjust if crop went out of bounds on the right/bottom
-                if x2 - x1 < box_size:
-                    x1 = max(x2 - box_size, 0)
-                if y2 - y1 < box_size:
-                    y1 = max(y2 - box_size, 0)
-
-                # final crop
+                # Crop the hand region (ROI)
                 cropped = frame[y1:y2, x1:x2]
-
                 if cropped.size == 0:
-                    continue  # skip invalid crops
+                    continue
 
-                # --- orientation correction ---
-                # landmarks: 0 = wrist, 9 = middle_finger_mcp (MediaPipe indexing)
-                try:
-                    wrist = hand_landmarks.landmark[0]
-                    middle_mcp = hand_landmarks.landmark[9]
-                    wrist_px = (wrist.x * w_frame - x1, wrist.y * h_frame - y1)
-                    middle_px = (middle_mcp.x * w_frame - x1, middle_mcp.y * h_frame - y1)
-                    vx = middle_px[0] - wrist_px[0]
-                    vy = middle_px[1] - wrist_px[1]
-                    # compute current angle (degrees)
-                    theta_deg = math.degrees(math.atan2(vy, vx))
-                    # compute rotation to make the finger vector point upward (-90 deg)
-                    rot_deg = -90.0 - theta_deg
-                    # rotate cropped image by rot_deg
-                    cropped = rotate_image(cropped, rot_deg)
-                except Exception:
-                    # If anything goes wrong with orientation logic, keep the unrotated crop
-                    pass
+                # Rotate hand to a consistent upright orientation
+                wrist = landmarks.landmark[0]
+                middle = landmarks.landmark[9]
+                dx = middle.x - wrist.x
+                dy = middle.y - wrist.y
+                angle = math.degrees(math.atan2(dy, dx))
+                cropped = rotate_image(cropped, -90 - angle)
 
-                # Save crop filename in format: VideoName_####.jpg
-                saved_count += 1
-                crop_filename = f"{video_name}_{saved_count:04d}.jpg"
-                save_path = os.path.join(video_output_folder, crop_filename)
+                # Save cropped image
+                filename = f"{subject}_{label}_{saved_count:05d}.jpg"
+                cv2.imwrite(os.path.join(output_dir, filename), cropped)
 
-                # Save crop
-                cv2.imwrite(save_path, cropped)
-
-                # Save metadata with label (note: we write just filename so preprocess can find it under crops/<video_name>/)
-                with open(crop_csv, mode="a", newline="") as f:
+                # Save metadata
+                with open(ANNOTATIONS, "a", newline="") as f:
                     writer = csv.writer(f)
-                    writer.writerow([video_name, frame_count, hand_index, crop_filename, label])
+                    writer.writerow([subject, label, frame_index, filename])
 
-                # Optional preview (comment out to speed up)
-                cv2.imshow("Hand Crop", cropped)
+                saved_count += 1
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+            cap.release()
+            print(f"✅ {subject} {label}: {saved_count} hand crops saved")
 
-    cap.release()
-    print(f"✅ Finished {video_file}: {saved_count} crops saved to {video_output_folder}")
-
-cv2.destroyAllWindows()
+print("🎉 Hand extraction completed successfully")
